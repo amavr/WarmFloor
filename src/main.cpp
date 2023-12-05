@@ -20,6 +20,7 @@ GyverOLED<SSD1306_128x64> oled;
 
 bool isActive = false;
 bool isActiveBak = false;
+bool isForceMode = false;
 
 uint8_t activeRelay = 0;
 uint8_t activeRelayBak = 3;
@@ -41,10 +42,12 @@ void setup()
     oled.init(); // инициализация
 }
 
+uint16_t interval_sec = 5;
+
 void loop()
 {
     sensor.requestTemp();
-    delay(1000);
+    delay(interval_sec * 1000);
     if (sensor.readTemp())
     {
         float t = sensor.getTemp();
@@ -64,7 +67,9 @@ void loop()
             isActive = true;
         }
 
-        relayTimes++;
+        isForceMode = t < hyst_beg;
+
+        relayTimes += interval_sec;
         if (relayTimes >= maxTimes)
         {
             relayTimes = 0;
@@ -79,7 +84,7 @@ void loop()
                 if (activeRelayBak != activeRelay)
                 {
                     digitalWrite(RELAY0_PIN, HIGH);
-                    digitalWrite(RELAY1_PIN, LOW);
+                    digitalWrite(RELAY1_PIN, isForceMode ? HIGH : LOW);
                     activeRelayBak = activeRelay;
                 }
             }
@@ -87,7 +92,7 @@ void loop()
             {
                 if (activeRelayBak != activeRelay)
                 {
-                    digitalWrite(RELAY0_PIN, LOW);
+                    digitalWrite(RELAY0_PIN, isForceMode ? HIGH : LOW);
                     digitalWrite(RELAY1_PIN, HIGH);
                     activeRelayBak = activeRelay;
                 }
@@ -104,7 +109,7 @@ void loop()
         }
 
         oled.clear();
-        drawReleysAndTemp(isActive ? activeRelay : 2, t);
+        drawReleysAndTemp(isActive ? activeRelay : 2, isForceMode, t);
         drawScale();
         drawMode(hyst_beg, hyst);
         drawTemp(t);

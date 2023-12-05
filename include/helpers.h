@@ -4,11 +4,11 @@ uint8_t readHystBeg(uint8_t hyst){
     return map(val, 0, 1023, 10, 40 - hyst);
 }
 
-void drawReleysAndTemp(uint8_t activeReley, float temp)
+void drawReleysAndTemp(uint8_t activeReley, bool inForseMode, float temp)
 {
     uint8_t top = 8;
-    oled.rect(4, top, 36, top + 7, activeReley == 0 ? OLED_FILL : OLED_STROKE);
-    oled.rect(92, top, 124, top + 7, activeReley == 1 ? OLED_FILL : OLED_STROKE);
+    oled.rect(4, top, 36, top + 7, activeReley == 1 ? OLED_FILL : inForseMode ? OLED_FILL : OLED_STROKE);
+    oled.rect(92, top, 124, top + 7, activeReley == 0 ? OLED_FILL : inForseMode ? OLED_FILL : OLED_STROKE);
     oled.setScale(1);
     oled.setCursorXY(50, top + 1); // курсор в (пиксель X, пиксель Y)
     oled.print(temp, 1);
