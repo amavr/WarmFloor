@@ -19,16 +19,19 @@ GyverOLED<SSD1306_128x64> oled;
 #include "helpers.h"
 
 bool isActive = false;
-bool isActiveBak = false;
 bool isForceMode = false;
-
 uint8_t activeRelay = 0;
-uint8_t activeRelayBak = 3;
 
-uint16_t relayTimes = 0;
-uint16_t maxTimes = 180;
+// цикл опроса датчика температуры + 500ms, т.е. реакции на изменение
+unsigned long timeout_ms = 4500;
+// переключение реле через 3 минуты
+unsigned long switch_period_ms = 180000;
+// начало отсчета периода переключения
+unsigned long switched_time_ms = 0;
 
+// начало интервала температур
 uint8_t hyst_beg = 20;
+// интервал заданных температур
 uint8_t hyst = 3;
 
 MicroDS18B20<TEMP_PIN> sensor;
@@ -40,22 +43,49 @@ void setup()
     pinMode(RELAY0_PIN, OUTPUT);
     pinMode(RELAY1_PIN, OUTPUT);
     oled.init(); // инициализация
-}
 
-uint16_t interval_sec = 5;
+    switched_time_ms = millis();
+}
 
 void loop()
 {
+    // цикл опроса изменения температура (4.5 сек)
+    // иначе отображения на экране с задержкой
+    unsigned long beg_cycle = millis();
+    while (millis() - beg_cycle < timeout_ms)
+    {
+        hyst_beg = readHystBeg(hyst);
+        drawInterval(hyst_beg, hyst);
+        oled.update();
+        delay(500);
+    }
+
+    hyst_beg = readHystBeg(hyst);
+    drawInterval(hyst_beg, hyst);
+
+    // смена активного реле
+    if (millis() - switched_time_ms > switch_period_ms)
+    {
+        // чтобы избежать работы только одной половины (с датчиком температуры)
+        // смена происходит только когда реле включено
+        if (isActive)
+        {
+            activeRelay = activeRelay == 0 ? 1 : 0;
+        }
+        switched_time_ms = millis();
+    }
+
     sensor.requestTemp();
-    delay(interval_sec * 1000);
+    delay(500);
+
     if (sensor.readTemp())
     {
         float t = sensor.getTemp();
-        Serial.println(t);
+        // Serial.println(t);
 
-        hyst_beg = readHystBeg(hyst);
+        // включение/выключение пола только при выходе за интервал
+        // внутри интервала переключений нет
 
-        isActiveBak = isActive;
         // температура выше чем заданный режим
         if (t > hyst_beg + hyst)
         {
@@ -67,62 +97,35 @@ void loop()
             isActive = true;
         }
 
-        isForceMode = t < hyst_beg;
+        // форс-мажор при снижении температуры ниже чем интервал на 2 градуса
+        // но поскольку суммарная мощность в форс-мажоре большая,
+        // то он в одном цикле включается, а в следующем выключается
+        isForceMode = t < hyst_beg - 2 && !isForceMode;
 
-        relayTimes += interval_sec;
-        if (relayTimes >= maxTimes)
-        {
-            relayTimes = 0;
-            activeRelayBak = activeRelay;
-            activeRelay = activeRelay == 0 ? 1 : 0;
-        }
+        bool left = activeRelay == 0 || isForceMode;
+        bool right = activeRelay == 1 || isForceMode;
 
         if (isActive)
         {
-            if (activeRelay == 0)
-            {
-                if (activeRelayBak != activeRelay)
-                {
-                    digitalWrite(RELAY0_PIN, HIGH);
-                    digitalWrite(RELAY1_PIN, isForceMode ? HIGH : LOW);
-                    activeRelayBak = activeRelay;
-                }
-            }
-            else
-            {
-                if (activeRelayBak != activeRelay)
-                {
-                    digitalWrite(RELAY0_PIN, isForceMode ? HIGH : LOW);
-                    digitalWrite(RELAY1_PIN, HIGH);
-                    activeRelayBak = activeRelay;
-                }
-            }
+            digitalWrite(RELAY0_PIN, left ? HIGH : LOW);
+            digitalWrite(RELAY1_PIN, right ? HIGH : LOW);
         }
         else
         {
-            if (isActiveBak != isActive)
-            {
-                digitalWrite(RELAY0_PIN, LOW);
-                digitalWrite(RELAY1_PIN, LOW);
-                isActiveBak = isActive;
-            }
+            digitalWrite(RELAY0_PIN, LOW);
+            digitalWrite(RELAY1_PIN, LOW);
         }
 
-        oled.clear();
-        drawReleysAndTemp(isActive ? activeRelay : 2, isForceMode, t);
-        drawScale();
-        drawMode(hyst_beg, hyst);
-        drawTemp(t);
-        oled.update();
+        showState(left, right, t, hyst_beg, hyst);
+        // oled.clear();
+        // drawReleysAndTemp(isActive ? activeRelay : 2, isForceMode, t);
+        // drawScale();
+        // drawInterval(hyst_beg, hyst);
+        // drawTemp(t);
+        // oled.update();
     }
     else
     {
         Serial.println("error");
     }
-
-    // float t = therm.getTempAverage();
-    // float t = 20.0;
-    // hyst_beg = readHystBeg(hyst);
-
-    // delay(300);
 }
